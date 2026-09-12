@@ -143,6 +143,14 @@ function Get-FullComputerName {
     return $env:COMPUTERNAME
 }
 
+# The machine's real name, reduced to a valid DNS label for Tailscale.
+function Get-TailscaleHostName {
+    param([string] $Name)
+    $h = (("$Name".ToLower() -replace '[^a-z0-9-]', '-') -replace '-+', '-').Trim('-')
+    if (-not $h) { $h = ("$env:COMPUTERNAME".ToLower() -replace '[^a-z0-9-]', '-').Trim('-') }
+    return $h
+}
+
 function Test-PendingReboot {
     $paths = @(
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending',
@@ -444,13 +452,12 @@ if ($SkipTailscale) {
         $status    = Get-TailscaleStatus
         $state     = if ($status) { $status.BackendState } else { 'Unknown' }
         $attempted = $false
+        $tsHost    = Get-TailscaleHostName $script:TargetName
 
         if ($state -eq 'Running') {
             Write-Log 'Already enrolled in a tailnet; not re-authenticating.' 'OK'
         } elseif ($TailscaleAuthKey) {
             $attempted = $true
-            $tsHost  = (("$script:TargetName".ToLower() -replace '[^a-z0-9-]', '-') -replace '-+', '-').Trim('-')
-            if (-not $tsHost) { $tsHost = $env:COMPUTERNAME.ToLower() }
             $tagArgs = @()
             $tagList = @($Tags -split '[,\s]+' | Where-Object { $_ } |
                          ForEach-Object { if ($_ -like 'tag:*') { $_ } else { "tag:$_" } })
@@ -473,10 +480,16 @@ if ($SkipTailscale) {
             Write-Log 'No auth key supplied. Enroll later with: tailscale up --unattended' 'WARN'
         }
 
-        # Make sure the node stays up before any user logs in.
+        # Keep the node up before any user logs in, and keep its tailnet hostname
+        # matching the machine's real name. This also repairs nodes that enrolled
+        # earlier under a truncated or stale name, since `up` is skipped for them.
+        $current = if ($status) { "$($status.Self.HostName)" } else { '' }
+        if ($current -and $current -ne $tsHost) {
+            Write-Log "Correcting tailnet hostname '$current' -> '$tsHost'." 'WARN'
+        }
         $prev = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        try { & $script:TailscaleExe set --unattended=true 2>&1 | Out-Null } catch { } finally { $ErrorActionPreference = $prev }
+        try { & $script:TailscaleExe set --unattended=true --hostname=$tsHost 2>&1 | Out-Null } catch { } finally { $ErrorActionPreference = $prev }
 
         $status = Get-TailscaleStatus
         if ($attempted) {
