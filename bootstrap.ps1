@@ -73,6 +73,7 @@ $script:TailscaleCgnat = '100.64.0.0/10'
 $script:TailscaleExe   = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
 $script:Failures       = @()
 $script:RebootRequired = $false
+$script:TargetName     = $env:COMPUTERNAME
 $script:S              = [ordered]@{      # summary fields, in display order
     'Machine'         = $env:COMPUTERNAME
     'Windows'         = 'unknown'
@@ -125,11 +126,21 @@ function Invoke-Step {
 function Test-HostNameValid {
     param([string] $Name)
     if ([string]::IsNullOrWhiteSpace($Name)) { return $false }
-    if ($Name.Length -gt 15) { return $false }
+    if ($Name.Length -gt 63) { return $false }
     if ($Name -notmatch '^[A-Za-z0-9][A-Za-z0-9-]*$') { return $false }
     if ($Name.EndsWith('-')) { return $false }
     if ($Name -match '^[0-9]+$') { return $false }
     return $true
+}
+
+# $env:COMPUTERNAME is the NetBIOS name, truncated to 15 characters. The real
+# name lives in the TCP/IP host name, which is what Tailscale should use.
+function Get-FullComputerName {
+    try {
+        $dns = (Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).DNSHostName
+        if ($dns) { return "$dns".Trim() }
+    } catch { }
+    return $env:COMPUTERNAME
 }
 
 function Test-PendingReboot {
@@ -250,30 +261,41 @@ Invoke-Step 'Local administrators (read-only audit)' {
 #-------------------------------------------------------------- 3. machine name
 
 Invoke-Step 'Computer name' {
-    $current = $env:COMPUTERNAME
+    $current = $env:COMPUTERNAME              # NetBIOS, max 15 chars
+    $full    = Get-FullComputerName           # full DNS host name
+    $script:TargetName = $full
+
+    if ($full -ne $current) {
+        Write-Log "Full computer name: '$full'." 'OK'
+        Write-Log "'$current' is the 15-character NetBIOS truncation of it. Machines whose names differ only after character 15 share that short name; the full name is used for Tailscale." 'WARN'
+    }
 
     if (-not $ComputerName) {
-        Write-Log "Using the machine's existing name: '$current'." 'OK'
-        if ($current -match '^(DESKTOP|LAPTOP|WIN|MININT|MINWINPC)-') {
+        Write-Log "Using the machine's existing name: '$full'." 'OK'
+        if ($full -match '^(DESKTOP|LAPTOP|WIN|MININT|MINWINPC)-') {
             Write-Log "That is still a stock Windows name. Pass -ComputerName <name> if this machine should be renamed." 'WARN'
         }
-        $script:S['Machine'] = $current
+        $script:S['Machine'] = if ($full -ne $current) { "$full (NetBIOS: $current)" } else { $full }
         return
     }
 
     $target = $ComputerName.Trim()
-    if ($target -eq $current) {
-        Write-Log "Already named '$current'; nothing to do." 'OK'
-        $script:S['Machine'] = $current
+    if ($target -eq $full -or $target -eq $current) {
+        Write-Log "Already named '$full'; nothing to do." 'OK'
+        $script:S['Machine'] = $full
         return
     }
     if (-not (Test-HostNameValid $target)) {
-        throw "'$target' is not a valid Windows hostname (1-15 chars, letters/digits/hyphen, not all digits, no trailing hyphen)."
+        throw "'$target' is not a valid Windows hostname (1-63 chars, letters/digits/hyphen, not all digits, no trailing hyphen)."
+    }
+    if ($target.Length -gt 15) {
+        Write-Log "'$target' is longer than 15 characters; its NetBIOS name will be truncated to '$($target.Substring(0,15))'." 'WARN'
     }
     Rename-Computer -NewName $target -Force -ErrorAction Stop
     $script:RebootRequired = $true
-    Write-Log "Renamed '$current' -> '$target' (takes effect after reboot)." 'OK'
-    $script:S['Machine'] = "$target (pending reboot; currently $current)"
+    $script:TargetName = $target
+    Write-Log "Renamed '$full' -> '$target' (takes effect after reboot)." 'OK'
+    $script:S['Machine'] = "$target (pending reboot; currently $full)"
 }
 
 #--------------------------------------------------------------------- 4. RDP
@@ -427,7 +449,8 @@ if ($SkipTailscale) {
             Write-Log 'Already enrolled in a tailnet; not re-authenticating.' 'OK'
         } elseif ($TailscaleAuthKey) {
             $attempted = $true
-            $tsHost  = ($script:S['Machine'] -split ' ')[0].ToLower()
+            $tsHost  = (("$script:TargetName".ToLower() -replace '[^a-z0-9-]', '-') -replace '-+', '-').Trim('-')
+            if (-not $tsHost) { $tsHost = $env:COMPUTERNAME.ToLower() }
             $tagArgs = @()
             $tagList = @($Tags -split '[,\s]+' | Where-Object { $_ } |
                          ForEach-Object { if ($_ -like 'tag:*') { $_ } else { "tag:$_" } })

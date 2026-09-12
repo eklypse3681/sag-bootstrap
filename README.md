@@ -86,8 +86,14 @@ change its tags in the admin console or re-run `tailscale up --advertise-tags=..
 
 ## Machine naming
 
-The script does **not** rename anything. It reads the machine's current name,
-reports it, and uses it as the Tailscale hostname. Since your machines are
+The script does **not** rename anything. It reads the machine's **full** computer
+name and uses it as the Tailscale hostname.
+
+Note this is not `$env:COMPUTERNAME`, which is the NetBIOS name truncated to 15
+characters. `SAG-AIR12-LITE-01` and `SAG-AIR12-LITE-02` both truncate to
+`SAG-AIR12-LITE-`, so deriving the Tailscale hostname from the short name would
+collide. The script reads `Win32_ComputerSystem.DNSHostName` instead and warns
+when the two differ. Since your machines are
 already named, the same command line works on all of them.
 
 If you ever do need to rename a box (a fresh install still sitting on
