@@ -131,6 +131,7 @@ A machine still carrying a stock Windows name (`DESKTOP-*`, `LAPTOP-*`, `WIN-*`,
 | Accounts | **Nothing.** Existing admins are listed for the log and left untouched; `SAGAdmin` is verified only. |
 | RDP | `fDenyTSConnections=0`, NLA required (`UserAuthentication=1`, `SecurityLayer=2`), built-in Remote Desktop firewall rules enabled. |
 | SSH | Installs the `OpenSSH.Server` capability, `sshd` set to Automatic and started, default shell set to PowerShell. |
+| SSH keys | Authorises the public keys listed in `$script:AdminPublicKeys` for administrator logins, in `C:\ProgramData\ssh\administrators_authorized_keys` with permissions locked to Administrators and SYSTEM. Adds only; never removes. |
 | Firewall | Adds `ClinicFleet-SSH-Tailscale` (TCP 22, source `100.64.0.0/10`, program `sshd.exe`) and **disables** the default allow-from-anywhere `OpenSSH-Server-In-TCP`. Re-enables any firewall profile found switched off. Never disables the firewall. |
 | Tailscale | Installs current stable MSI with `TS_UNATTENDEDMODE=always`, service set to Automatic, `tailscale set --unattended=true`. Enrolls with tags when given; reports tag ownership and warns if the node is user-owned. |
 | Power | `standby-timeout-ac 0` and `hibernate-timeout-ac 0`. Battery settings and display sleep are untouched. |
@@ -159,7 +160,10 @@ Disable-NetFirewallRule -Name RemoteDesktop-UserMode-In-TCP, RemoteDesktop-UserM
 - No auth key, password, or recovery key is in this repo or written to the log.
 - SSH is reachable only from the Tailscale range; access control itself belongs
   in your Tailscale ACLs.
-- No SSH keys are installed. Key deployment is the fleet tool's job.
+- The SSH **public** keys in the script are not secrets — the private keys never
+  leave the operator's machine. To revoke, delete the line and remove the key
+  from the machines; the script only ever adds keys, so it cannot silently strip
+  your own access.
 - Nothing is exposed to the internet. No port forwarding is configured, and none
   should be — reach these machines over Tailscale.
 - RDP keeps Network Level Authentication on. Windows authentication is not weakened.

@@ -30,6 +30,10 @@
     person and their keys do not expire, which is what an unattended machine
     needs. Omit this if the auth key already carries its tags (the usual case).
 
+.PARAMETER AdminPublicKey
+    Extra SSH public key(s) to authorise for administrator logins, on top of the
+    keys published in this script. Also read from $env:SSH_ADMIN_KEY.
+
 .PARAMETER SkipTailscale
     Do not install or enroll Tailscale.
 
@@ -57,6 +61,7 @@ param(
     [string] $BreakGlassAdmin = 'SAGAdmin',
     [string] $TailscaleAuthKey = $env:TAILSCALE_AUTH_KEY,
     [string[]] $Tags = $env:TAILSCALE_TAGS,
+    [string[]] $AdminPublicKey = $env:SSH_ADMIN_KEY,
     [switch] $SkipTailscale,
     [switch] $RestrictRdpToTailscale,
     [switch] $AutoReboot
@@ -70,6 +75,11 @@ $script:AppName        = 'ClinicFleet'
 $script:LogDir         = Join-Path $env:ProgramData $script:AppName
 $script:LogFile        = Join-Path $script:LogDir 'bootstrap.log'
 $script:TailscaleCgnat = '100.64.0.0/10'
+# Public keys authorised for administrator SSH logins. Public keys are not
+# secrets; the matching private keys never appear here. Remove a line to revoke.
+$script:AdminPublicKeys = @(
+    'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOo0TpmF5dPBfC51vncqilL0rN/54+gRDklptfFWoikh steve@sag-fleet'
+)
 $script:TailscaleExe   = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
 $script:Failures       = @()
 $script:RebootRequired = $false
@@ -80,6 +90,7 @@ $script:S              = [ordered]@{      # summary fields, in display order
     'Break-glass'     = 'not checked'
     'RDP'             = 'not configured'
     'SSH'             = 'not configured'
+    'SSH admin keys'  = 'none'
     'Tailscale'       = 'not installed'
     'Tailscale IP'    = '-'
     'Tailscale name'  = '-'
@@ -416,6 +427,51 @@ Invoke-Step 'OpenSSH Server' {
 
     Write-Log 'No SSH keys installed - key deployment belongs to the fleet tool.' 'INFO'
     $script:S['SSH'] = "Enabled (TCP 22 from $script:TailscaleCgnat)"
+}
+
+#-------------------------------------------------- 5b. administrator SSH keys
+
+Invoke-Step 'Administrator SSH keys' {
+    $keys = @(@($script:AdminPublicKeys) + @($AdminPublicKey) |
+              ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -notmatch '^#' })
+    if ($keys.Count -eq 0) {
+        Write-Log 'No administrator public keys published; leaving key auth unconfigured.'
+        return
+    }
+
+    # Windows OpenSSH ignores ~/.ssh/authorized_keys for members of the
+    # Administrators group and reads this file instead.
+    $dir  = Join-Path $env:ProgramData 'ssh'
+    $file = Join-Path $dir 'administrators_authorized_keys'
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    $existing = @()
+    if (Test-Path -LiteralPath $file) {
+        $existing = @(Get-Content -LiteralPath $file -ErrorAction SilentlyContinue |
+                      ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+    }
+    # Compare on "<type> <base64>" so a changed comment is not treated as a new key.
+    $fingerprintOf = { param($line) ($line -split '\s+')[0..1] -join ' ' }
+    $have  = @($existing | ForEach-Object { & $fingerprintOf $_ })
+    $added = 0
+    foreach ($k in $keys) {
+        if ($have -notcontains (& $fingerprintOf $k)) { $existing += $k; $added++ }
+    }
+
+    if ($added -gt 0) {
+        # ASCII, so Windows PowerShell does not prepend a BOM - sshd rejects the file if it does.
+        Set-Content -LiteralPath $file -Value $existing -Encoding ASCII -Force
+        Write-Log "Authorised $added new administrator key(s)." 'OK'
+    } else {
+        Write-Log 'Administrator keys already authorised.' 'OK'
+    }
+
+    # sshd refuses the file unless only Administrators and SYSTEM can write it.
+    # SIDs rather than names, so this works on non-English Windows.
+    $acl = & icacls.exe $file /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F' 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "icacls failed to lock down $file : $acl" }
+    Write-Log 'Permissions locked to Administrators and SYSTEM.' 'OK'
+    $script:S['SSH admin keys'] = "$($existing.Count) authorised"
 }
 
 #--------------------------------------------------------------- 6. Tailscale
