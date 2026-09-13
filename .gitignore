@@ -1,0 +1,5 @@
+
+# generated unattend output - contains plaintext credentials
+unattend/out/
+unattend/*.generated.*
+Autounattend.xml
