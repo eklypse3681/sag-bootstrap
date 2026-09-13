@@ -22,6 +22,12 @@ function Say($m) {
 try {
     Say "unattended setup starting on $env:COMPUTERNAME (usb: $UsbRoot)"
 
+    # Belt and braces: some OEM images are sysprepped /oobe without /generalize,
+    # in which case the specialize pass never runs and the policy set there is
+    # never applied. Setting it again here is harmless and idempotent.
+    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" /v NoLocalPasswordResetQuestions /t REG_DWORD /d 1 /f | Out-Null
+    Say "local-account security questions disabled"
+
     # --- network ---------------------------------------------------------------
     # Every profile on the stick is imported, so a machine can be moved between
     # sites without another visit. user=all so each profile belongs to the machine

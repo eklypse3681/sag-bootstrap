@@ -12,6 +12,28 @@
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
 
   <settings pass="specialize">
+    <!--
+      Security questions are what OOBE asks for when a local account is created
+      through its UI. This answer file creates the account itself, so that UI
+      never runs - but the policy is set anyway, for two reasons: it guarantees
+      the prompt cannot appear on a build that behaves differently, and security
+      questions are a password-reset vector worth removing outright on a machine
+      that already has a break-glass account and central management.
+
+      specialize runs before oobeSystem, so this lands before OOBE could ask.
+    -->
+    <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>Disable local-account security questions</Description>
+          <Path>reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" /v NoLocalPasswordResetQuestions /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+    </component>
+
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
                xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">

@@ -16,7 +16,7 @@ Settings come from the environment or from .env (see .env.example):
   COMPUTER_NAME        e.g. SAG-AIR12-LITE-101   (prompted if not set)
   ADMIN_PASSWORD       password for the local admin account   (required)
   TAILSCALE_AUTH_KEY   tagged, reusable, pre-approved         (required)
-  ADMIN_USER           default SAGAdmin
+  ADMIN_USERNAME       default SAGAdmin
   TAILSCALE_TAGS       default tag:clinic-workstation
   TIMEZONE             default Pacific Standard Time
   WIPE=1               delete existing contents of the stick first
@@ -76,7 +76,7 @@ fi
 
 : "${ADMIN_PASSWORD:?set ADMIN_PASSWORD in the environment or .env}"
 : "${TAILSCALE_AUTH_KEY:?set TAILSCALE_AUTH_KEY in the environment or .env}"
-ADMIN_USER="${ADMIN_USER:-SAGAdmin}"
+ADMIN_USER="${ADMIN_USERNAME:-${ADMIN_USER:-SAGAdmin}}"
 TAILSCALE_TAGS="${TAILSCALE_TAGS:-tag:clinic-workstation}"
 TIMEZONE="${TIMEZONE:-Pacific Standard Time}"
 BOOTSTRAP_URL="${BOOTSTRAP_URL:-https://raw.githubusercontent.com/eklypse3681/sag-bootstrap/main/bootstrap.ps1}"

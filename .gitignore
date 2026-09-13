@@ -8,3 +8,11 @@ Autounattend.xml
 unattend/.env
 unattend/wifi/*.xml
 !unattend/wifi/.gitkeep
+
+# editor swap/backup files - a vim swap of a .env holds the live buffer,
+# credentials and all
+*.swp
+*.swo
+*.swn
+*~
+.*.sw?
