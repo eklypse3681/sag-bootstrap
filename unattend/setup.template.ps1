@@ -23,15 +23,20 @@ try {
     Say "unattended setup starting on $env:COMPUTERNAME (usb: $UsbRoot)"
 
     # --- network ---------------------------------------------------------------
-    $wifi = Join-Path $PSScriptRoot 'wifi.xml'
-    if (Test-Path $wifi) {
-        # user=all so the profile belongs to the machine and connects at the login
-        # screen, before anyone signs in. A per-user profile would leave the machine
-        # offline and unreachable until someone logged in.
-        netsh wlan add profile filename="$wifi" user=all | Out-Null
-        Say "wifi profile imported (all users)"
+    # Every profile on the stick is imported, so a machine can be moved between
+    # sites without another visit. user=all so each profile belongs to the machine
+    # and connects at the login screen; a per-user profile would leave the machine
+    # offline and unreachable until somebody signed in.
+    $wifiDir = Join-Path $PSScriptRoot 'wifi'
+    $profiles = @(Get-ChildItem -Path $wifiDir -Filter *.xml -ErrorAction SilentlyContinue)
+    if ($profiles.Count -gt 0) {
+        foreach ($p in $profiles) {
+            $out = (netsh wlan add profile filename="$($p.FullName)" user=all 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0) { Say "wifi profile added: $($p.BaseName)" }
+            else { Say "WIFI FAILED for $($p.BaseName): $out" }
+        }
     } else {
-        Say "no wifi.xml on the stick - assuming wired"
+        Say "no wifi profiles on the stick - assuming wired"
     }
 
     Say "waiting for internet..."
@@ -70,12 +75,15 @@ finally {
     $targets = @(
         (Join-Path $UsbRoot 'Autounattend.xml'),
         (Join-Path $UsbRoot 'autounattend.xml'),
-        (Join-Path $PSScriptRoot 'wifi.xml'),
         (Join-Path $PSScriptRoot 'setup.ps1'),
         "$env:WINDIR\Panther\unattend.xml",
         "$env:WINDIR\Panther\Unattend\unattend.xml",
         "$env:WINDIR\System32\Sysprep\unattend.xml"
     )
+    # Wifi profiles carry network keys, so the whole directory goes too.
+    $targets += @(Get-ChildItem -Path (Join-Path $PSScriptRoot 'wifi') -Filter *.xml -ErrorAction SilentlyContinue |
+                  ForEach-Object { $_.FullName })
+
     foreach ($t in $targets) {
         if (Test-Path -LiteralPath $t) {
             try {

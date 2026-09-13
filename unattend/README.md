@@ -20,23 +20,46 @@ ignored. If that happens, see *When it doesn't work* below.
 
 ## Build a stick
 
-```bash
-export COMPUTER_NAME=SAG-AIR12-LITE-101
-export ADMIN_PASSWORD='...'                 # local break-glass account
-export TAILSCALE_AUTH_KEY='tskey-auth-...'  # tagged, reusable, pre-approved
-export WIFI_PROFILE=~/wifi-fireflood.xml    # optional; omit if wired
+Copy `.env.example` to `.env` and fill it in once:
 
-./unattend/make-usb.sh /Volumes/YOUR_USB
+```ini
+ADMIN_PASSWORD=...
+TAILSCALE_AUTH_KEY=tskey-auth-...
+
+WIFI_1_SSID=FireFlood
+WIFI_1_PASSWORD=...
+WIFI_2_SSID=GDM
+WIFI_2_PASSWORD=...
 ```
 
-Any FAT32/exFAT stick works — it does not need to be Windows install media, and
-nothing else on the stick is touched.
+Then, per machine:
 
-### Getting the wifi profile
+```bash
+./unattend/make-usb.sh /Volumes/PATRIOT
+# prompts: computer name (e.g. SAG-AIR12-LITE-101)
+```
 
-Export it from a machine already on the network. It must be `key=clear`: an
-encrypted export is bound to the exporting machine's DPAPI and will not import
-anywhere else.
+`.env` is gitignored. Anything already exported in your shell wins over it, so a
+one-off can be steered from the command line without editing the file. Add
+`WIPE=1` to clear the stick's existing contents first.
+
+Any FAT32 or exFAT stick works — it does **not** need to be Windows install
+media. It must not be APFS or HFS+, which Windows cannot read at all; Disk
+Utility defaults to APFS, so this is easy to get wrong, and the script refuses
+rather than producing a stick that silently does nothing.
+
+### Wifi
+
+Profiles are **generated** from the SSID and passphrase in `.env`. There is no
+need to export anything from Windows, and macOS has no equivalent format to
+export anyway. List as many networks as you like (`WIFI_1_`, `WIFI_2_`, …);
+every one is pre-seeded, so a machine works at more than one site without
+another visit.
+
+The generator assumes WPA2-PSK with AES. For anything it cannot express — hidden
+SSIDs, enterprise auth — drop a hand-exported profile into `unattend/wifi/` and
+it is copied verbatim. Those must be exported with `key=clear`, since an
+encrypted export is bound to the machine that produced it:
 
 ```powershell
 netsh wlan export profile name="FireFlood" key=clear folder=C:\Temp

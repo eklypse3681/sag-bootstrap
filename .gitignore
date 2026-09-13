@@ -3,3 +3,8 @@
 unattend/out/
 unattend/*.generated.*
 Autounattend.xml
+
+# unattend: real credentials and network keys
+unattend/.env
+unattend/wifi/*.xml
+!unattend/wifi/.gitkeep

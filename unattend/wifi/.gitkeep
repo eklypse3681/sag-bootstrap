@@ -1,0 +1,9 @@
+Drop exported WLAN profile XML files here. Every .xml in this directory is
+copied to the stick and imported on the target machine, so several networks
+can be pre-seeded.
+
+Export each one with key=clear, or it will not import on another machine:
+
+  netsh wlan export profile name="FireFlood" key=clear folder=C:\Temp
+
+These files contain network keys in plaintext and are gitignored.
